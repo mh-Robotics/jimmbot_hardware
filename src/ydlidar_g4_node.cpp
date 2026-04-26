@@ -1,7 +1,8 @@
 #include "jimmbot_sensors/ydlidar_g4_node.hpp"
 
 int main(int argc, char * argv[]) {
-    ros::init(argc, argv, "ydlidar_node"); 
+    rclcpp::init(argc, argv);
+    auto node = std::make_shared<rclcpp::Node>("ydlidar_node");
     printf("__   ______  _     ___ ____    _    ____  \n");
     printf("\\ \\ / /  _ \\| |   |_ _|  _ \\  / \\  |  _ \\ \n");
     printf(" \\ V /| | | | |    | || | | |/ _ \\ | |_) | \n");
@@ -26,34 +27,49 @@ int main(int argc, char * argv[]) {
     bool isSingleChannel = false;
     bool isTOFLidar = false;
 
-    ros::NodeHandle nh;
-    ros::Publisher scan_pub = nh.advertise<sensor_msgs::LaserScan>("scan", 1000);
-    ros::NodeHandle nh_private("~");
-    nh_private.param<std::string>("port", port, "/dev/ydlidar"); 
-    nh_private.param<int>("baudrate", baudrate, 230400); 
-    nh_private.param<std::string>("frame_id", frame_id, "laser_frame");
-    nh_private.param<bool>("resolution_fixed", resolution_fixed, "true");
-    nh_private.param<bool>("auto_reconnect", auto_reconnect, "true");
-    nh_private.param<bool>("reversion", reversion, "true");
-    nh_private.param<double>("angle_max", angle_max , 180);
-    nh_private.param<double>("angle_min", angle_min , -180);
-    nh_private.param<double>("range_max", max_range , 64.0);
-    nh_private.param<double>("range_min", min_range , 0.01);
-    nh_private.param<double>("frequency", frequency , 10.0);
-    nh_private.param<std::string>("ignore_array",list,"");
-    nh_private.param<int>("samp_rate", samp_rate, samp_rate);
-    nh_private.param<bool>("isSingleChannel", isSingleChannel, isSingleChannel);
-    nh_private.param<bool>("isTOFLidar", isTOFLidar, isTOFLidar);
+    auto scan_pub = node->create_publisher<sensor_msgs::msg::LaserScan>("scan", 1000);
+
+    node->declare_parameter<std::string>("port", "/dev/ydlidar");
+    node->declare_parameter<int>("baudrate", 230400);
+    node->declare_parameter<std::string>("frame_id", "laser_frame");
+    node->declare_parameter<bool>("resolution_fixed", true);
+    node->declare_parameter<bool>("auto_reconnect", true);
+    node->declare_parameter<bool>("reversion", true);
+    node->declare_parameter<double>("angle_max", 180.0);
+    node->declare_parameter<double>("angle_min", -180.0);
+    node->declare_parameter<double>("range_max", 64.0);
+    node->declare_parameter<double>("range_min", 0.01);
+    node->declare_parameter<double>("frequency", 10.0);
+    node->declare_parameter<std::string>("ignore_array", "");
+    node->declare_parameter<int>("samp_rate", samp_rate);
+    node->declare_parameter<bool>("isSingleChannel", isSingleChannel);
+    node->declare_parameter<bool>("isTOFLidar", isTOFLidar);
+
+    node->get_parameter("port", port);
+    node->get_parameter("baudrate", baudrate);
+    node->get_parameter("frame_id", frame_id);
+    node->get_parameter("resolution_fixed", resolution_fixed);
+    node->get_parameter("auto_reconnect", auto_reconnect);
+    node->get_parameter("reversion", reversion);
+    node->get_parameter("angle_max", angle_max);
+    node->get_parameter("angle_min", angle_min);
+    node->get_parameter("range_max", max_range);
+    node->get_parameter("range_min", min_range);
+    node->get_parameter("frequency", frequency);
+    node->get_parameter("ignore_array", list);
+    node->get_parameter("samp_rate", samp_rate);
+    node->get_parameter("isSingleChannel", isSingleChannel);
+    node->get_parameter("isTOFLidar", isTOFLidar);
  
 
     ignore_array = split(list ,',');
     if(ignore_array.size()%2){
-        ROS_ERROR_STREAM("ignore array is odd need be even");
+        RCLCPP_ERROR(node->get_logger(), "ignore array is odd need be even");
     }
 
     for(uint16_t i =0 ; i < ignore_array.size();i++){
         if(ignore_array[i] < -180 && ignore_array[i] > 180){
-            ROS_ERROR_STREAM("ignore array should be between 0 and 360");
+            RCLCPP_ERROR(node->get_logger(), "ignore array should be between 0 and 360");
         }
     }
 
@@ -70,7 +86,7 @@ int main(int argc, char * argv[]) {
         angle_min = temp;
     }
 
-    ROS_INFO("[YDLIDAR INFO] Now YDLIDAR ROS SDK VERSION:%s .......", ROSVerision);
+    RCLCPP_INFO(node->get_logger(), "[YDLIDAR INFO] Now YDLIDAR ROS SDK VERSION:%s .......", ROSVerision);
     laser.setSerialPort(port);
     laser.setSerialBaudrate(baudrate);
     laser.setMaxRange(max_range);
@@ -90,21 +106,22 @@ int main(int argc, char * argv[]) {
     if (ret) {
         ret = laser.turnOn();
         if (!ret) {
-            ROS_ERROR("Failed to start scan mode!!!");
+            RCLCPP_ERROR(node->get_logger(), "Failed to start scan mode!!!");
         }
     } else {
-        ROS_ERROR("Error initializing YDLIDAR Comms and Status!!!");
+        RCLCPP_ERROR(node->get_logger(), "Error initializing YDLIDAR Comms and Status!!!");
     }
-    ros::Rate rate(20);
+    rclcpp::Rate rate(20);
 
-    while (ret&&ros::ok()) {
+    while (ret && rclcpp::ok()) {
         bool hardError;
         LaserScan scan;
         if(laser.doProcessSimple(scan, hardError )){
-            sensor_msgs::LaserScan scan_msg;
-            ros::Time start_scan_time;
-            start_scan_time.sec = scan.stamp/1000000000ul;
-            start_scan_time.nsec = scan.stamp%1000000000ul;
+            sensor_msgs::msg::LaserScan scan_msg;
+            rclcpp::Time start_scan_time(
+                static_cast<int32_t>(scan.stamp / 1000000000ul),
+                static_cast<uint32_t>(scan.stamp % 1000000000ul),
+                RCL_ROS_TIME);
             scan_msg.header.stamp = start_scan_time;
             scan_msg.header.frame_id = frame_id;
             scan_msg.angle_min =(scan.config.min_angle);
@@ -124,14 +141,15 @@ int main(int argc, char * argv[]) {
                      scan_msg.intensities[index] = scan.points[i].intensity;
                 }
             }
-            scan_pub.publish(scan_msg);
+            scan_pub->publish(scan_msg);
         }  
         rate.sleep();
-        ros::spinOnce();
+        rclcpp::spin_some(node);
     }
 
     laser.turnOff();
-    ROS_INFO("[YDLIDAR INFO] Now YDLIDAR is stopping .......");
+    RCLCPP_INFO(node->get_logger(), "[YDLIDAR INFO] Now YDLIDAR is stopping .......");
     laser.disconnecting();
+    rclcpp::shutdown();
     return 0;
 }

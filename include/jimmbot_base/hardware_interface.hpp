@@ -40,15 +40,10 @@
 #ifndef JIMMBOT_HARDWARE_INTERFACE_H_
 #define JIMMBOT_HARDWARE_INTERFACE_H_
 
-#include <hardware_interface/joint_command_interface.h>  // for hardware_interface::VelocityJointInterface
-#include <hardware_interface/joint_state_interface.h>  // for hardware_interface::JointStateInterface
-#include <hardware_interface/robot_hw.h>   // for hardware_interface::RobotHW
-#include <jimmbot_msgs/CanFrameStamped.h>  // for jimmbot_msgs::CanFrameStamped
-#include <jimmbot_msgs/ExtnDataStamped.h>  // for jimmbot_msgs::ExtnDataStamped
-#include <ros/node_handle.h>               // for ros::NodeHandle
-#include <ros/publisher.h>                 // for ros::Publisher
-#include <ros/subscriber.h>                // for ros::Subscriber
-#include <std_msgs/Float64.h>              // for std_msgs::Float64
+#include <rclcpp/rclcpp.hpp>
+#include <jimmbot_msgs/msg/can_frame_stamped.hpp>  // for jimmbot_msgs::msg::CanFrameStamped
+#include <jimmbot_msgs/msg/extn_data_stamped.hpp>  // for jimmbot_msgs::msg::ExtnDataStamped
+#include <std_msgs/msg/float64.hpp>                // for std_msgs::msg::Float64
 
 #include "can_msg_wrapper.hpp"       // for CanMsgWrapper
 #include "jimmbot_base/constants.h"  // for jimmbot_base::k*
@@ -80,7 +75,7 @@ auto GetIndex(Collection const& collection, size_t offset = 0) {
  * interface. It provides an interface to interact with the hardware of the
  * JimmBot robot.
  */
-class JimmBotHardwareInterface : public hardware_interface::RobotHW {
+class JimmBotHardwareInterface {
  public:
   /**
    * @brief The Joint element structure.This struct is used to save the data for
@@ -97,33 +92,28 @@ class JimmBotHardwareInterface : public hardware_interface::RobotHW {
    * @param nh A pointer to the ROS node handle.
    * @param nh_param A pointer to the ROS node handle for parameters.
    */
-  explicit JimmBotHardwareInterface(
-      std::reference_wrapper<ros::NodeHandle> nh,
-      std::reference_wrapper<ros::NodeHandle> nh_param);
+  explicit JimmBotHardwareInterface(rclcpp::Node::SharedPtr node);
 
   /**
    * @brief Register the controller interface
    */
-  void RegisterControlInterfaces();
 
   /**
    * @brief Read data from hardware and update the state
    */
-  void read(const ros::Time& /*time*/,
-            const ros::Duration& /*period*/) override;
+  void read(const rclcpp::Time& time, const rclcpp::Duration& period);
 
   /**
    * @brief Write data to the hardware
    */
-  void write(const ros::Time& /*time*/,
-             const ros::Duration& /*period*/) override;
+  void write(const rclcpp::Time& time, const rclcpp::Duration& period);
 
   /**
    * @brief Returns the current time.
    *
    * @return The current time.
    */
-  [[nodiscard]] inline ros::Time GetTimeNow() const { return ros::Time::now(); }
+  [[nodiscard]] inline rclcpp::Time GetTimeNow() const { return node_->now(); }
 
   /**
    * @brief Returns the control frequency.
@@ -140,8 +130,8 @@ class JimmBotHardwareInterface : public hardware_interface::RobotHW {
    * @param last_time The last update time.
    * @return The elapsed time.
    */
-  [[nodiscard]] inline ros::Duration GetElapsedTime(ros::Time last_time) const {
-    return static_cast<ros::Duration>(this->GetTimeNow() - last_time);
+  [[nodiscard]] inline rclcpp::Duration GetElapsedTime(rclcpp::Time last_time) const {
+    return this->GetTimeNow() - last_time;
   }
 
   /**
@@ -150,7 +140,7 @@ class JimmBotHardwareInterface : public hardware_interface::RobotHW {
    * @param feedback_msg The feedback message.
    */
   void CanFeedbackMsgCallback(
-      const jimmbot_msgs::CanFrameStamped::ConstPtr& feedback_msg);
+      const jimmbot_msgs::msg::CanFrameStamped::ConstSharedPtr& feedback_msg);
 
   /**
    * @brief Callback function for external data message.
@@ -158,21 +148,21 @@ class JimmBotHardwareInterface : public hardware_interface::RobotHW {
    * @param extn_data_msg Pointer to the external data message.
    */
   void ExtnDataMsgCallback(
-      const jimmbot_msgs::ExtnDataStamped::ConstPtr& extn_data_msg);
+      const jimmbot_msgs::msg::ExtnDataStamped::ConstSharedPtr& extn_data_msg);
 
   /**
    * @brief Callback function for front camera tilt angle.
    *
    * @param angle Pointer to the front camera tilt angle.
    */
-  void CameraTiltFrontCallback(const std_msgs::Float64::ConstPtr& angle);
+  void CameraTiltFrontCallback(const std_msgs::msg::Float64::ConstSharedPtr& angle);
 
   /**
    * @brief Callback function for back camera tilt angle.
    *
    * @param angle Pointer to the back camera tilt angle.
    */
-  void CameraTiltBackCallback(const std_msgs::Float64::ConstPtr& angle);
+  void CameraTiltBackCallback(const std_msgs::msg::Float64::ConstSharedPtr& angle);
 
  private:
   /**
@@ -190,11 +180,6 @@ class JimmBotHardwareInterface : public hardware_interface::RobotHW {
    */
   void UpdateAngleToKinectCameras();
 
-  hardware_interface::JointStateInterface joint_state_interface_;
-  hardware_interface::VelocityJointInterface joint_velocity_interface_;
-
-  // @todo(jimmyhalimi): Check why this does not work. Access is not possible.
-  // std::vector<JointElements> joint_elements_;
   JointElements joint_elements_[4];
 
   CanMsgWrapper front_left_ = CanMsgWrapper(
@@ -210,11 +195,12 @@ class JimmBotHardwareInterface : public hardware_interface::RobotHW {
       static_cast<uint8_t>(CanMsgWrapper::CanId::kCommandWheelBackRight),
       static_cast<uint8_t>(CanMsgWrapper::CanId::kFeedbackWheelBackRight));
 
-  ros::NodeHandle nh_;
-  ros::Publisher esp32_can_pub_;
-  ros::Subscriber esp32_can_sub_;
-  ros::Subscriber extn_data_sub_;
-  std::pair<ros::Subscriber, ros::Subscriber> camera_tilt_sub_;
+  rclcpp::Node::SharedPtr node_;
+  rclcpp::Publisher<jimmbot_msgs::msg::CanFrameStamped>::SharedPtr esp32_can_pub_;
+  rclcpp::Subscription<jimmbot_msgs::msg::CanFrameStamped>::SharedPtr esp32_can_sub_;
+  rclcpp::Subscription<jimmbot_msgs::msg::ExtnDataStamped>::SharedPtr extn_data_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr camera_tilt_front_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr camera_tilt_back_sub_;
   std::pair<bool, bool> lights_;
   std::pair<float, float> camera_angles_;
 

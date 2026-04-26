@@ -39,104 +39,67 @@
  */
 #include "jimmbot_base/hardware_interface.hpp"  // for JimmBotHardwareInterface
 
-#include <ros/callback_queue.h>  // for ros::CallbackQueue
-#include <ros/console.h>         // for ROS_WARN_NAMED
-
 #include <chrono>  // for std::chrono::milliseconds
 #include <thread>  // for std::thread
-
-#include "controller_manager/controller_manager.h"  // for controller_manager::ControllerManager
 
 namespace {
 constexpr auto kOneSecond = 1;
 }  // namespace
 
 namespace jimmbot_base {
-JimmBotHardwareInterface::JimmBotHardwareInterface(
-    std::reference_wrapper<ros::NodeHandle> nh,
-    std::reference_wrapper<ros::NodeHandle> nh_param)
+JimmBotHardwareInterface::JimmBotHardwareInterface(rclcpp::Node::SharedPtr node)
     : lights_(false, false),
       camera_angles_({}, {}),
       control_frequency_(kDefaultControlFrequency),
-      max_wheel_speed_(kDefaultMaxAllowedWheelSpeed) {
-  if (!nh_param.get().getParam(kControlFrequencyKey, control_frequency_)) {
-    nh_param.get().param<double>(kControlFrequencyKey, control_frequency_,
-                                 kDefaultControlFrequency);
-  }
+      max_wheel_speed_(kDefaultMaxAllowedWheelSpeed),
+      node_(node) {
+  node_->declare_parameter<double>(kControlFrequencyKey, kDefaultControlFrequency);
+  node_->get_parameter(kControlFrequencyKey, control_frequency_);
 
-  if (!nh_param.get().getParam(kMaxWheelSpeedKey, max_wheel_speed_)) {
-    nh_param.get().param<double>(kMaxWheelSpeedKey, max_wheel_speed_,
-                                 kDefaultMaxAllowedWheelSpeed);
-  }
+  node_->declare_parameter<double>(kMaxWheelSpeedKey, kDefaultMaxAllowedWheelSpeed);
+  node_->get_parameter(kMaxWheelSpeedKey, max_wheel_speed_);
 
-  if (!nh_param.get().getParam(kCommandFrameIdKey, frame_id_)) {
-    nh_param.get().param<std::string>(kCommandFrameIdKey, frame_id_,
-                                      kDefaultCommandFrameId);
-  }
+  node_->declare_parameter<std::string>(kCommandFrameIdKey, std::string(kDefaultCommandFrameId));
+  node_->get_parameter(kCommandFrameIdKey, frame_id_);
 
-  if (!nh_param.get().getParam(kLeftWheelFrontKey, left_wheel_front_)) {
-    nh_param.get().param<std::string>(kLeftWheelFrontKey, left_wheel_front_,
-                                      kDefaultLeftWheelFront);
-  }
+  node_->declare_parameter<std::string>(kLeftWheelFrontKey, std::string(kDefaultLeftWheelFront));
+  node_->get_parameter(kLeftWheelFrontKey, left_wheel_front_);
 
-  if (!nh_param.get().getParam(kLeftWheelBackKey, left_wheel_back_)) {
-    nh_param.get().param<std::string>(kLeftWheelBackKey, left_wheel_back_,
-                                      kDefaultLeftWheelBack);
-  }
+  node_->declare_parameter<std::string>(kLeftWheelBackKey, std::string(kDefaultLeftWheelBack));
+  node_->get_parameter(kLeftWheelBackKey, left_wheel_back_);
 
-  if (!nh_param.get().getParam(kRightWheelFrontKey, right_wheel_front_)) {
-    nh_param.get().param<std::string>(kRightWheelFrontKey, right_wheel_front_,
-                                      kDefaultRightWheelFront);
-  }
+  node_->declare_parameter<std::string>(kRightWheelFrontKey, std::string(kDefaultRightWheelFront));
+  node_->get_parameter(kRightWheelFrontKey, right_wheel_front_);
 
-  if (!nh_param.get().getParam(kRightWheelBackKey, right_wheel_back_)) {
-    nh_param.get().param<std::string>(kRightWheelBackKey, right_wheel_back_,
-                                      kDefaultRightWheelBack);
-  }
+  node_->declare_parameter<std::string>(kRightWheelBackKey, std::string(kDefaultRightWheelBack));
+  node_->get_parameter(kRightWheelBackKey, right_wheel_back_);
 
-  RegisterControlInterfaces();
-
-  esp32_can_sub_ = nh_.subscribe<jimmbot_msgs::CanFrameStamped>(
+  esp32_can_sub_ = node_->create_subscription<jimmbot_msgs::msg::CanFrameStamped>(
       kDefaultFeedbackTopic, 1,
-      &::jimmbot_base::JimmBotHardwareInterface::CanFeedbackMsgCallback, this);
-  extn_data_sub_ = nh_.subscribe<jimmbot_msgs::ExtnDataStamped>(
+      [this](const jimmbot_msgs::msg::CanFrameStamped::ConstSharedPtr msg) {
+        CanFeedbackMsgCallback(msg);
+      });
+  extn_data_sub_ = node_->create_subscription<jimmbot_msgs::msg::ExtnDataStamped>(
       kDefaultExtendedDataTopic, 1,
-      &::jimmbot_base::JimmBotHardwareInterface::ExtnDataMsgCallback, this);
-  camera_tilt_sub_.first = nh_.subscribe<std_msgs::Float64>(
+      [this](const jimmbot_msgs::msg::ExtnDataStamped::ConstSharedPtr msg) {
+        ExtnDataMsgCallback(msg);
+      });
+  camera_tilt_front_sub_ = node_->create_subscription<std_msgs::msg::Float64>(
       kDefaultFrontCameraTiltTopic, 1,
-      &::jimmbot_base::JimmBotHardwareInterface::CameraTiltFrontCallback, this);
-  camera_tilt_sub_.second = nh_.subscribe<std_msgs::Float64>(
+      [this](const std_msgs::msg::Float64::ConstSharedPtr msg) {
+        CameraTiltFrontCallback(msg);
+      });
+  camera_tilt_back_sub_ = node_->create_subscription<std_msgs::msg::Float64>(
       kDefaultBackCameraTiltTopic, 1,
-      &::jimmbot_base::JimmBotHardwareInterface::CameraTiltBackCallback, this);
-  esp32_can_pub_ = nh_.advertise<jimmbot_msgs::CanFrameStamped>(
-      kDefaultCommandTopic, 1, false);
+      [this](const std_msgs::msg::Float64::ConstSharedPtr msg) {
+        CameraTiltBackCallback(msg);
+      });
+  esp32_can_pub_ = node_->create_publisher<jimmbot_msgs::msg::CanFrameStamped>(
+      kDefaultCommandTopic, 1);
 }
 
-void JimmBotHardwareInterface::RegisterControlInterfaces() {
-  std::set<std::string> joints = {left_wheel_front_, left_wheel_back_,
-                                  right_wheel_front_, right_wheel_back_};
-
-  const auto index = GetIndex(joints, 0);
-
-  for (auto joint = std::begin(joints); joint != std::end(joints); ++joint) {
-    hardware_interface::JointStateHandle joints_state_handle(
-        *joint, &joint_elements_[index(joint)].feedback.position,
-        &joint_elements_[index(joint)].feedback.velocity,
-        &joint_elements_[index(joint)].feedback.effort);
-    joint_state_interface_.registerHandle(joints_state_handle);
-
-    hardware_interface::JointHandle joints_velocity_handle(
-        joint_state_interface_.getHandle(*joint),
-        &joint_elements_[index(joint)].command.velocity);
-    joint_velocity_interface_.registerHandle(joints_velocity_handle);
-  }
-
-  registerInterface(&joint_state_interface_);
-  registerInterface(&joint_velocity_interface_);
-}
-
-void JimmBotHardwareInterface::write(const ros::Time& /*time*/,
-                                     const ros::Duration& /*period*/) {
+void JimmBotHardwareInterface::write(const rclcpp::Time& /*time*/,
+                                     const rclcpp::Duration& /*period*/) {
   std::vector<CanMsgWrapperCommand> speed_commands{
       CanMsgWrapperCommand{std::ref(front_left_),
                            CanMsgWrapperCommand::Command::kWheelSpeed,
@@ -155,15 +118,15 @@ void JimmBotHardwareInterface::write(const ros::Time& /*time*/,
     speed_command.Execute();
   }
 
-  ROS_WARN_NAMED("back_right_", "C: Velocity: %.2f",
-                 joint_elements_[back_right_.TransmitId()].command.velocity);
+  RCLCPP_WARN(node_->get_logger(), "C: Velocity: %.2f",
+              joint_elements_[back_right_.TransmitId()].command.velocity);
 
   //@todo(issues/6): Write the angle to AUX kinect
   UpdateSpeedToHardware();
 }
 
-void JimmBotHardwareInterface::read(const ros::Time& /*time*/,
-                                    const ros::Duration& /*period*/) {
+void JimmBotHardwareInterface::read(const rclcpp::Time& /*time*/,
+                                    const rclcpp::Duration& /*period*/) {
   std::vector<CanMsgWrapperCommand> feedbacks{
       CanMsgWrapperCommand{std::ref(front_left_),
                            CanMsgWrapperCommand::Command::kWheelStatus},
@@ -192,66 +155,65 @@ void JimmBotHardwareInterface::UpdateJointsFromHardware() const {
     joint_elements_[back_right_.TransmitId()].feedback =
         back_right_.GetWheelFeedbackStatus();
 
-    ROS_WARN_NAMED(
-        "back_right_", "F: Command: %d",
-        joint_elements_[back_right_.TransmitId()].feedback.command_id);
-    ROS_WARN_NAMED("back_right_", "F: Effort: %.2f",
-                   joint_elements_[back_right_.TransmitId()].feedback.effort);
-    ROS_WARN_NAMED("back_right_", "F: Position: %.2f",
-                   joint_elements_[back_right_.TransmitId()].feedback.position);
-    ROS_WARN_NAMED("back_right_", "F: RPM: %d",
-                   joint_elements_[back_right_.TransmitId()].feedback.rpm);
-    ROS_WARN_NAMED("back_right_", "F: Velocity: %.2f",
-                   joint_elements_[back_right_.TransmitId()].feedback.velocity);
+    RCLCPP_WARN(node_->get_logger(), "F: Command: %d",
+          joint_elements_[back_right_.TransmitId()].feedback.command_id);
+    RCLCPP_WARN(node_->get_logger(), "F: Effort: %.2f",
+          joint_elements_[back_right_.TransmitId()].feedback.effort);
+    RCLCPP_WARN(node_->get_logger(), "F: Position: %.2f",
+          joint_elements_[back_right_.TransmitId()].feedback.position);
+    RCLCPP_WARN(node_->get_logger(), "F: RPM: %d",
+          joint_elements_[back_right_.TransmitId()].feedback.rpm);
+    RCLCPP_WARN(node_->get_logger(), "F: Velocity: %.2f",
+          joint_elements_[back_right_.TransmitId()].feedback.velocity);
   }
 }
 
 void JimmBotHardwareInterface::UpdateSpeedToHardware() const {
-  jimmbot_msgs::CanFrameStamped data_frame;
+  jimmbot_msgs::msg::CanFrameStamped data_frame;
 
   {
-    data_frame.header.stamp = ros::Time::now();
+    data_frame.header.stamp = node_->now();
     data_frame.header.frame_id = frame_id_;
     data_frame.can_frame = front_left_.GetWheelCommandStatus();
-    esp32_can_pub_.publish(data_frame);
+    esp32_can_pub_->publish(data_frame);
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
   }
 
   {
-    data_frame.header.stamp = ros::Time::now();
+    data_frame.header.stamp = node_->now();
     data_frame.header.frame_id = frame_id_;
     data_frame.can_frame = front_right_.GetWheelCommandStatus();
-    esp32_can_pub_.publish(data_frame);
+    esp32_can_pub_->publish(data_frame);
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
   }
 
   {
-    data_frame.header.stamp = ros::Time::now();
+    data_frame.header.stamp = node_->now();
     data_frame.header.frame_id = frame_id_;
     data_frame.can_frame = back_left_.GetWheelCommandStatus();
-    esp32_can_pub_.publish(data_frame);
+    esp32_can_pub_->publish(data_frame);
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
   }
 
   {
-    data_frame.header.stamp = ros::Time::now();
+    data_frame.header.stamp = node_->now();
     data_frame.header.frame_id = frame_id_;
     data_frame.can_frame = back_right_.GetWheelCommandStatus();
-    esp32_can_pub_.publish(data_frame);
+    esp32_can_pub_->publish(data_frame);
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
   }
 
   {
-    data_frame.header.stamp = ros::Time::now();
+    data_frame.header.stamp = node_->now();
     data_frame.header.frame_id = frame_id_;
     data_frame.can_frame = CanMsgWrapper::GetLightsInCan(lights_);
-    esp32_can_pub_.publish(data_frame);
+    esp32_can_pub_->publish(data_frame);
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
   }
 }
 
 void JimmBotHardwareInterface::UpdateAngleToKinectCameras() {
-  std_msgs::Float64 angle;
+  std_msgs::msg::Float64 angle;
 
   angle.data =
       (std::get<kFirst>(camera_angles_) == std::get<kSecond>(camera_angles_)
@@ -262,7 +224,7 @@ void JimmBotHardwareInterface::UpdateAngleToKinectCameras() {
 }
 
 void JimmBotHardwareInterface::CanFeedbackMsgCallback(
-    const jimmbot_msgs::CanFrameStamped::ConstPtr& feedback_msg) {
+  const jimmbot_msgs::msg::CanFrameStamped::ConstSharedPtr& feedback_msg) {
   std::vector<CanMsgWrapperCommand> update_status_frames_commands{
       CanMsgWrapperCommand{std::ref(front_left_),
                            CanMsgWrapperCommand::Command::kWheelStatusUpdate,
@@ -283,59 +245,48 @@ void JimmBotHardwareInterface::CanFeedbackMsgCallback(
 }
 
 void JimmBotHardwareInterface::ExtnDataMsgCallback(
-    const jimmbot_msgs::ExtnDataStamped::ConstPtr& extn_data_msg) {
+  const jimmbot_msgs::msg::ExtnDataStamped::ConstSharedPtr& extn_data_msg) {
   lights_ = {extn_data_msg->extn_data.left_light_bulb,
              extn_data_msg->extn_data.right_light_bulb};
 }
 
 void JimmBotHardwareInterface::CameraTiltFrontCallback(
-    const std_msgs::Float64::ConstPtr& angle) {
+  const std_msgs::msg::Float64::ConstSharedPtr& angle) {
   camera_angles_.first = angle->data;
 }
 
 void JimmBotHardwareInterface::CameraTiltBackCallback(
-    const std_msgs::Float64::ConstPtr& angle) {
+  const std_msgs::msg::Float64::ConstSharedPtr& angle) {
   camera_angles_.second = angle->data;
 }
 
 void ControlLoopCallback(
-    std::reference_wrapper<jimmbot_base::JimmBotHardwareInterface> jimmbot_base,
-    std::reference_wrapper<controller_manager::ControllerManager>
-        controller_manager,
-    ros::Time last_time) {
-  jimmbot_base.get().read(ros::Time{}, ros::Duration{});
-
-  controller_manager.get().update(jimmbot_base.get().GetTimeNow(),
-                                  jimmbot_base.get().GetElapsedTime(last_time));
-
-  jimmbot_base.get().write(ros::Time{}, ros::Duration{});
+    jimmbot_base::JimmBotHardwareInterface& hw,
+    rclcpp::Time& last_time) {
+  const auto now = hw.GetTimeNow();
+  const auto period = hw.GetElapsedTime(last_time);
+  last_time = now;
+  hw.read(now, period);
+  hw.write(now, period);
 }
 
 }  // end namespace jimmbot_base
 
 int main(int argc, char** argv) {
-  ros::init(argc, argv, "hardware_interface_node");
-  ros::NodeHandle nh;
-  ros::NodeHandle nh_param("~");
+  rclcpp::init(argc, argv);
+  auto node = std::make_shared<rclcpp::Node>("hardware_interface_node");
+  jimmbot_base::JimmBotHardwareInterface hardware_interface(node);
 
-  jimmbot_base::JimmBotHardwareInterface hardware_interface(std::ref(nh),
-                                                            std::ref(nh_param));
+  auto last_time = hardware_interface.GetTimeNow();
+  const double control_period_s =
+      kOneSecond / hardware_interface.GetControlFrequency();
+  auto control_timer = node->create_wall_timer(
+      std::chrono::duration<double>(control_period_s),
+      [&hardware_interface, &last_time]() {
+        jimmbot_base::ControlLoopCallback(hardware_interface, last_time);
+      });
 
-  controller_manager::ControllerManager controller_manager(&hardware_interface);
-
-  ros::CallbackQueue jimmbot_queue;
-  ros::AsyncSpinner jimmbot_spinner(kOneSecond, &jimmbot_queue);
-
-  ros::TimerOptions control_loop_timer(
-      ros::Duration(kOneSecond / hardware_interface.GetControlFrequency()),
-      std::bind(jimmbot_base::ControlLoopCallback, std::ref(hardware_interface),
-                std::ref(controller_manager), hardware_interface.GetTimeNow()),
-      &jimmbot_queue);
-
-  ros::Timer control_loop_callback = nh.createTimer(control_loop_timer);
-
-  jimmbot_spinner.start();
-  ros::spin();
-
+  rclcpp::spin(node);
+  rclcpp::shutdown();
   return EXIT_SUCCESS;
 }

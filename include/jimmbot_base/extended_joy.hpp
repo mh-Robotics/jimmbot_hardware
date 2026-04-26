@@ -12,11 +12,11 @@
 #ifndef JIMMBOT_TELEOP_TWIST_JOY_TELEOP_TWIST_JOY_EXTENDED_H
 #define JIMMBOT_TELEOP_TWIST_JOY_TELEOP_TWIST_JOY_EXTENDED_H
 
-#include <jimmbot_msgs/ExtnData.h>
-#include <jimmbot_msgs/ExtnDataStamped.h>
-#include <ros/ros.h>
-#include <sensor_msgs/Joy.h>
-#include <std_msgs/Float64.h>
+#include <jimmbot_msgs/msg/extn_data.hpp>
+#include <jimmbot_msgs/msg/extn_data_stamped.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/joy.hpp>
+#include <std_msgs/msg/float64.hpp>
 
 #include <map>
 #include <string>
@@ -35,10 +35,9 @@ class TeleopTwistJoyExtended {
   /**
    * @brief Construct a new Teleop Twist Joy Extended object
    *
-   * @param nh Node handle
-   * @param nh_param Private node handle parameters
+  * @param options rclcpp node options
    */
-  TeleopTwistJoyExtended(ros::NodeHandle* nh, ros::NodeHandle* nh_param);
+  explicit TeleopTwistJoyExtended(rclcpp::Node* node);
 
  private:
   struct Impl;

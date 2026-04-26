@@ -34,7 +34,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#include <jimmbot_msgs/CanFrame.h>  // for jimmbot_msg::CanFrame
+#include <cstring>                         // for std::memcpy
+#include <jimmbot_msgs/msg/can_frame.hpp>  // for jimmbot_msgs::msg::CanFrame
 
 #include "constants.h"  // for jimmbot_base::k*
 
@@ -107,11 +108,11 @@ class CanPackt {
     static_assert(sizeof(inType) <= jimmbot_base::kCanMaxDLen,
                   "Struct is larger than CAN message data field size");
 
-    jimmbot_msgs::CanFrame can_frame;
+    jimmbot_msgs::msg::CanFrame can_frame;
     can_frame.id = transmit_id_;
     can_frame.dlc = jimmbot_base::kCanMaxDLen;
 
-    std::memcpy(can_frame.data, &wheel_status, sizeof(inType));
+    std::memcpy(can_frame.data.data(), &wheel_status, sizeof(inType));
 
     return can_frame;
   }
@@ -131,7 +132,7 @@ class CanPackt {
                   "Struct is larger than CAN message data field size");
 
     outType data;
-    std::memcpy(&data, can_frame.data, sizeof(outType));
+    std::memcpy(&data, can_frame.data.data(), sizeof(outType));
 
     return data;
   }
@@ -151,13 +152,13 @@ class CanPackt {
  * @return The packed data as a CAN frame.
  */
 template <>
-inline jimmbot_msgs::CanFrame
-CanPackt::PackCompressed<WheelStatus, jimmbot_msgs::CanFrame>(
+inline jimmbot_msgs::msg::CanFrame
+CanPackt::PackCompressed<WheelStatus, jimmbot_msgs::msg::CanFrame>(
     const WheelStatus& wheel_status) const {
   static_assert(sizeof(CompressedWheelStatus) <= jimmbot_base::kCanMaxDLen,
                 "Struct is larger than CAN message data field size");
 
-  jimmbot_msgs::CanFrame can_frame;
+  jimmbot_msgs::msg::CanFrame can_frame;
   can_frame.id = transmit_id_;
   can_frame.dlc = jimmbot_base::kCanMaxDLen;
 
@@ -171,7 +172,7 @@ CanPackt::PackCompressed<WheelStatus, jimmbot_msgs::CanFrame>(
   compressed_status.velocity = static_cast<int8_t>(wheel_status.velocity * 20);
 
   // Copy the compressed data into the CAN frame
-  std::memcpy(can_frame.data.c_array(), &compressed_status,
+  std::memcpy(can_frame.data.data(), &compressed_status,
               sizeof(CompressedWheelStatus));
 
   return can_frame;
@@ -188,10 +189,10 @@ CanPackt::PackCompressed<WheelStatus, jimmbot_msgs::CanFrame>(
  */
 template <>
 inline WheelStatus
-CanPackt::UnpackCompressed<jimmbot_msgs::CanFrame, WheelStatus>(
-    const jimmbot_msgs::CanFrame& can_frame) const {
+CanPackt::UnpackCompressed<jimmbot_msgs::msg::CanFrame, WheelStatus>(
+    const jimmbot_msgs::msg::CanFrame& can_frame) const {
   static_assert(
-      sizeof(jimmbot_msgs::CanFrame::data) <= jimmbot_base::kCanMaxDLen,
+      sizeof(jimmbot_msgs::msg::CanFrame::data) <= jimmbot_base::kCanMaxDLen,
       "Struct is larger than CAN message data field size");
 
   WheelStatus wheel_status;

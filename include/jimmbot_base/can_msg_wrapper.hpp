@@ -42,9 +42,11 @@
 #ifndef JIMMBOT_BASE_CAN_MSG_WRAPPER_H_
 #define JIMMBOT_BASE_CAN_MSG_WRAPPER_H_
 
-#include <jimmbot_msgs/CanFrame.h>         // for jimmbot_msg::CanFrame
-#include <jimmbot_msgs/CanFrameStamped.h>  // for jimmbot_msg::CanFrameStamped
+#include <jimmbot_msgs/msg/can_frame.hpp>          // for jimmbot_msgs::msg::CanFrame
+#include <jimmbot_msgs/msg/can_frame_stamped.hpp>   // for jimmbot_msgs::msg::CanFrameStamped
 
+#include <functional>     // for std::function
+#include <memory>         // for std::unique_ptr
 #include <mutex>          // for std::mutex
 #include <unordered_map>  // for std::unordered_map
 
@@ -54,8 +56,8 @@ namespace jimmbot_base {
 
 constexpr auto kWheelDiameter = 0.1651;
 
-std::ostream& operator<<(std::ostream& os,
-                         const jimmbot_msgs::CanFrame::ConstPtr& obj) {
+inline std::ostream& operator<<(std::ostream& os,
+                         const std::shared_ptr<const jimmbot_msgs::msg::CanFrame>& obj) {
   os << "Data length: " << std::hex << static_cast<double>(obj->dlc)
      << std::endl;
 
@@ -71,7 +73,7 @@ std::ostream& operator<<(std::ostream& os,
   return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const WheelStatus& obj) {
+inline std::ostream& operator<<(std::ostream& os, const WheelStatus& obj) {
   os << "Command: " << obj.command_id << ", Effort: " << obj.effort
      << ", Position: " << obj.position << ", RPM: " << obj.rpm
      << ", Velocity: " << obj.velocity << std::endl;
@@ -127,7 +129,7 @@ class CanMsgWrapper {
    *
    * @return jimmbot_msgs::CanFrame
    */
-  [[nodiscard]] jimmbot_msgs::CanFrame GetWheelCommandStatus() const;
+  [[nodiscard]] jimmbot_msgs::msg::CanFrame GetWheelCommandStatus() const;
 
   /**
    * @brief Get the Status object
@@ -142,7 +144,7 @@ class CanMsgWrapper {
    * @param lights
    * @return jimmbot_msgs::CanFrame
    */
-  [[nodiscard]] static jimmbot_msgs::CanFrame GetLightsInCan(
+  [[nodiscard]] static jimmbot_msgs::msg::CanFrame GetLightsInCan(
       const std::pair<bool, bool>& lights);
 
   /**
@@ -150,7 +152,7 @@ class CanMsgWrapper {
    *
    * @param status_frame
    */
-  void UpdateWheelFeedbackStatusFrame(jimmbot_msgs::CanFrame status_frame);
+  void UpdateWheelFeedbackStatusFrame(jimmbot_msgs::msg::CanFrame status_frame);
 
   [[nodiscard]] inline uint8_t TransmitId() const {
     return canpressor_->TransmitId();
@@ -181,7 +183,7 @@ class CanMsgWrapper {
 
  private:
   std::unique_ptr<CanPackt> canpressor_;
-  jimmbot_msgs::CanFrame feedback_status_;
+  jimmbot_msgs::msg::CanFrame feedback_status_;
   mutable std::mutex feedback_mutex_;
   WheelStatus command_status_;
   mutable std::mutex command_mutex_;
@@ -209,9 +211,15 @@ class CanMsgWrapperCommand : Command {
   };
 
  public:
+  struct CommandHash {
+    std::size_t operator()(Command c) const noexcept {
+      return std::hash<uint8_t>{}(static_cast<uint8_t>(c));
+    }
+  };
+
   CanMsgWrapper& can_wrapper;
   Command command;
-  jimmbot_msgs::CanFrame feedback_status;
+  jimmbot_msgs::msg::CanFrame feedback_status;
   WheelStatus command_status;
 
   CanMsgWrapperCommand(const CanMsgWrapperCommand&) = default;
@@ -226,7 +234,7 @@ class CanMsgWrapperCommand : Command {
         command_status(wheel_status) {}
 
   CanMsgWrapperCommand(std::reference_wrapper<CanMsgWrapper> can_wrapper,
-                       Command command, jimmbot_msgs::CanFrame can_frame)
+                       Command command, jimmbot_msgs::msg::CanFrame can_frame)
       : can_wrapper(can_wrapper),
         command(command),
         feedback_status(can_frame) {}
@@ -235,7 +243,7 @@ class CanMsgWrapperCommand : Command {
                        Command command)
       : can_wrapper(can_wrapper), command(command) {}
 
-  std::unordered_map<Command, const std::function<void()>> type2func{
+  std::unordered_map<Command, const std::function<void()>, CommandHash> type2func{
       {Command::kWheelOff,
        [&]() { return can_wrapper.SetWheelCommandStatus(command_status); }},
       {Command::kWheelOn,

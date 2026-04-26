@@ -7,8 +7,8 @@
  * 
  */
 
-#include <ros/ros.h>
-#include "sensor_msgs/LaserScan.h"
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/laser_scan.hpp>
 #include "CYdLidar.h"
 #include <vector>
 #include <iostream>

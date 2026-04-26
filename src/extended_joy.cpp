@@ -7,24 +7,25 @@ namespace jimmbot_base {
  * for robots which link TeleopTwistJoyExtended directly into base nodes.
  */
 struct TeleopTwistJoyExtended::Impl {
-  void JoyCallback(const sensor_msgs::Joy::ConstPtr& joy);
-  void SendTiltAngleMsg(const sensor_msgs::Joy::ConstPtr& joy_msg,
+  void JoyCallback(const sensor_msgs::msg::Joy::ConstSharedPtr& joy);
+  void SendTiltAngleMsg(const sensor_msgs::msg::Joy::ConstSharedPtr& joy_msg,
                         const std::string& which_map);
-  void SendExtnDataMsg(const sensor_msgs::Joy::ConstPtr& joy_msg,
+  void SendExtnDataMsg(const sensor_msgs::msg::Joy::ConstSharedPtr& joy_msg,
                        const std::string& which_map);
   bool ReturnSwitchStateFromPush(bool state);
 
-  ros::Time time_old = ros::Time::now();
+  rclcpp::Node* node{nullptr};
+  rclcpp::Time time_old{0, 0, RCL_ROS_TIME};
   bool inverse_state = false;
   int inverse_movement = 3;
   int left_light_bulb = 5;
   int right_light_bulb = 4;
   int horn = 0;
 
-  ros::Subscriber joy_sub;
-  ros::Publisher camera_possition_pub_front;
-  ros::Publisher camera_possition_pub_back;
-  ros::Publisher extn_data_pub;
+  rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub;
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr camera_possition_pub_front;
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr camera_possition_pub_back;
+  rclcpp::Publisher<jimmbot_msgs::msg::ExtnDataStamped>::SharedPtr extn_data_pub;
 
   std::map<std::string, int> axis_linear_map;
   std::map<std::string, std::map<std::string, double> > scale_linear_map;
@@ -32,58 +33,55 @@ struct TeleopTwistJoyExtended::Impl {
 
 /**
  * Constructs TeleopTwistJoyExtended.
- * \param nh NodeHandle to use for setting up the publisher and subscriber.
- * \param nh_param NodeHandle to use for searching for configuration parameters.
+ * \param node rclcpp::Node to use for pub/sub and parameters.
  */
-TeleopTwistJoyExtended::TeleopTwistJoyExtended(ros::NodeHandle* nh,
-                                               ros::NodeHandle* nh_param) {
+TeleopTwistJoyExtended::TeleopTwistJoyExtended(rclcpp::Node* node) {
   pimpl_ = new Impl;
+  pimpl_->node = node;
+  pimpl_->time_old = node->now();
 
   pimpl_->camera_possition_pub_front =
-      nh->advertise<std_msgs::Float64>("camera_tilt_front", 1, true);
+      node->create_publisher<std_msgs::msg::Float64>("camera_tilt_front", 1);
   pimpl_->camera_possition_pub_back =
-      nh->advertise<std_msgs::Float64>("camera_tilt_back", 1, true);
+      node->create_publisher<std_msgs::msg::Float64>("camera_tilt_back", 1);
   pimpl_->extn_data_pub =
-      nh->advertise<jimmbot_msgs::ExtnDataStamped>("extn_data", 1, true);
-  pimpl_->joy_sub = nh->subscribe<sensor_msgs::Joy>(
-      "joy", 1, &TeleopTwistJoyExtended::Impl::JoyCallback, pimpl_);
+      node->create_publisher<jimmbot_msgs::msg::ExtnDataStamped>("extn_data", 1);
+  pimpl_->joy_sub = node->create_subscription<sensor_msgs::msg::Joy>(
+      "joy", 1,
+      [this](const sensor_msgs::msg::Joy::ConstSharedPtr msg) {
+        pimpl_->JoyCallback(msg);
+      });
 
-  if (nh_param->getParam("axis_linear_tilt", pimpl_->axis_linear_map)) {
-    nh_param->getParam("max_angle_tilt", pimpl_->scale_linear_map["normal"]);
-  } else {
-    nh_param->param<int>("axis_linear_tilt", pimpl_->axis_linear_map["data"],
-                         3);
-    nh_param->param<double>("max_angle_tilt",
-                            pimpl_->scale_linear_map["normal"]["data"], 30);
-  }
+  node->declare_parameter<int>("axis_linear_tilt", 3);
+  node->get_parameter("axis_linear_tilt", pimpl_->axis_linear_map["data"]);
+
+  node->declare_parameter<double>("max_angle_tilt", 30.0);
+  node->get_parameter("max_angle_tilt",
+                      pimpl_->scale_linear_map["normal"]["data"]);
 
   for (auto it = pimpl_->axis_linear_map.begin();
        it != pimpl_->axis_linear_map.end(); ++it) {
-    ROS_INFO_NAMED("TeleopTwistJoyExtended",
-                   "Linear axis %s on %i at scale %f.", it->first.c_str(),
-                   it->second, pimpl_->scale_linear_map["normal"][it->first]);
+    RCLCPP_INFO(node->get_logger(),
+                "Linear axis %s on %i at scale %f.", it->first.c_str(),
+                it->second, pimpl_->scale_linear_map["normal"][it->first]);
   }
 
-  if (!nh_param->getParam("inverse_movement", pimpl_->inverse_movement)) {
-    nh_param->param<int>("inverse_movement", pimpl_->inverse_movement, 3);
-  }
+  node->declare_parameter<int>("inverse_movement", 3);
+  node->get_parameter("inverse_movement", pimpl_->inverse_movement);
 
-  if (!nh_param->getParam("left_light_bulb", pimpl_->left_light_bulb)) {
-    nh_param->param<int>("left_light_bulb", pimpl_->left_light_bulb, 5);
-  }
+  node->declare_parameter<int>("left_light_bulb", 5);
+  node->get_parameter("left_light_bulb", pimpl_->left_light_bulb);
 
-  if (!nh_param->getParam("right_light_bulb", pimpl_->right_light_bulb)) {
-    nh_param->param<int>("right_light_bulb", pimpl_->right_light_bulb, 4);
-  }
+  node->declare_parameter<int>("right_light_bulb", 4);
+  node->get_parameter("right_light_bulb", pimpl_->right_light_bulb);
 
-  if (!nh_param->getParam("horn", pimpl_->horn)) {
-    nh_param->param<int>("horn", pimpl_->horn, 0);
-  }
+  node->declare_parameter<int>("horn", 0);
+  node->get_parameter("horn", pimpl_->horn);
 }
 
 double DegreeToRadian(double degree) { return (degree * M_PI / 180); }
 
-double GetVal(const sensor_msgs::Joy::ConstPtr& joy_msg,
+double GetVal(const sensor_msgs::msg::Joy::ConstSharedPtr& joy_msg,
               const std::map<std::string, int>& axis_map,
               const std::map<std::string, double>& scale_map,
               const std::string& fieldname) {
@@ -97,10 +95,11 @@ double GetVal(const sensor_msgs::Joy::ConstPtr& joy_msg,
 }
 
 void TeleopTwistJoyExtended::Impl::SendTiltAngleMsg(
-    const sensor_msgs::Joy::ConstPtr& joy_msg, const std::string& which_map) {
+    const sensor_msgs::msg::Joy::ConstSharedPtr& joy_msg,
+    const std::string& which_map) {
   // Initializes with zeros by default.
-  std_msgs::Float64 camera_front_possition_msg;
-  std_msgs::Float64 camera_back_possition_msg;
+  std_msgs::msg::Float64 camera_front_possition_msg;
+  std_msgs::msg::Float64 camera_back_possition_msg;
 
   camera_front_possition_msg.data = DegreeToRadian(
       GetVal(joy_msg, axis_linear_map, scale_linear_map[which_map], "data") *
@@ -108,13 +107,14 @@ void TeleopTwistJoyExtended::Impl::SendTiltAngleMsg(
   camera_back_possition_msg.data = DegreeToRadian(
       GetVal(joy_msg, axis_linear_map, scale_linear_map[which_map], "data"));
 
-  camera_possition_pub_front.publish(camera_front_possition_msg);
-  camera_possition_pub_back.publish(camera_back_possition_msg);
+  camera_possition_pub_front->publish(camera_front_possition_msg);
+  camera_possition_pub_back->publish(camera_back_possition_msg);
 }
 
 bool TeleopTwistJoyExtended::Impl::ReturnSwitchStateFromPush(bool state) {
-  if (ros::Time::now().toSec() - time_old.toSec() <
-      ros::Duration(0.2).toSec()) {
+  const double elapsed =
+      (node->now() - time_old).seconds();
+  if (elapsed < 0.2) {
     return inverse_state;
   }
 
@@ -126,17 +126,18 @@ bool TeleopTwistJoyExtended::Impl::ReturnSwitchStateFromPush(bool state) {
     }
   }
 
-  time_old = ros::Time::now();
+  time_old = node->now();
 
   return inverse_state;
 }
 
 void TeleopTwistJoyExtended::Impl::SendExtnDataMsg(
-    const sensor_msgs::Joy::ConstPtr& joy_msg, const std::string& which_map) {
-  jimmbot_msgs::ExtnDataStamped extn_data_msg;
+    const sensor_msgs::msg::Joy::ConstSharedPtr& joy_msg,
+    const std::string& which_map) {
+  jimmbot_msgs::msg::ExtnDataStamped extn_data_msg;
 
   extn_data_msg.header.frame_id = "/jimmbot/extn_data";
-  extn_data_msg.header.stamp = ros::Time::now();
+  extn_data_msg.header.stamp = node->now();
   extn_data_msg.extn_data.inverse_movement = static_cast<uint8_t>(
       ReturnSwitchStateFromPush(joy_msg->buttons[inverse_movement] != 0));
   extn_data_msg.extn_data.left_light_bulb =
@@ -145,11 +146,11 @@ void TeleopTwistJoyExtended::Impl::SendExtnDataMsg(
       joy_msg->axes[right_light_bulb] == -1 ? true : false);
   extn_data_msg.extn_data.horn = joy_msg->buttons[horn];
 
-  extn_data_pub.publish(extn_data_msg);
+  extn_data_pub->publish(extn_data_msg);
 }
 
 void TeleopTwistJoyExtended::Impl::JoyCallback(
-    const sensor_msgs::Joy::ConstPtr& joy_msg) {
+    const sensor_msgs::msg::Joy::ConstSharedPtr& joy_msg) {
   if (!joy_msg->buttons.empty()) {
     SendTiltAngleMsg(joy_msg, "normal");
     SendExtnDataMsg(joy_msg, "normal");
@@ -158,13 +159,10 @@ void TeleopTwistJoyExtended::Impl::JoyCallback(
 }  // end namespace jimmbot_base
 
 int main(int argc, char** argv) {
-  ros::init(argc, argv, "extended_joy_node");
-
-  ros::NodeHandle nh("");
-  ros::NodeHandle nh_param("~");
-  jimmbot_base::TeleopTwistJoyExtended joy_teleop_extended(&nh, &nh_param);
-
-  ros::spin();
-
+  rclcpp::init(argc, argv);
+  auto node = std::make_shared<rclcpp::Node>("extended_joy_node");
+  jimmbot_base::TeleopTwistJoyExtended joy_teleop_extended(node.get());
+  rclcpp::spin(node);
+  rclcpp::shutdown();
   return EXIT_SUCCESS;
 }

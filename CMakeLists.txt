@@ -40,10 +40,6 @@ target_link_libraries(hardware_interface PUBLIC
   rclcpp::rclcpp
   ${std_msgs_TARGETS}
   ${jimmbot_msgs_TARGETS}
-  hardware_interface::hardware_interface
-  hardware_interface::mock_components
-  controller_manager::controller_manager
-  controller_manager::controller_manager_parameters
 )
 
 # ── extended_joy node ────────────────────────────────────────────────────────
@@ -74,15 +70,21 @@ target_link_libraries(kinect_aux PUBLIC
 )
 
 # ── ydlidar_g4_node ──────────────────────────────────────────────────────────
-add_executable(ydlidar_g4_node src/ydlidar_g4_node.cpp)
-target_include_directories(ydlidar_g4_node PRIVATE
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-)
-target_link_libraries(ydlidar_g4_node PUBLIC
-  rclcpp::rclcpp
-  ${sensor_msgs_TARGETS}
-  sensor_msgs::sensor_msgs_library
-)
+find_package(ydlidar_sdk QUIET)
+if(ydlidar_sdk_FOUND)
+  add_executable(ydlidar_g4_node src/ydlidar_g4_node.cpp)
+  target_include_directories(ydlidar_g4_node PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+  target_link_libraries(ydlidar_g4_node PUBLIC
+    rclcpp::rclcpp
+    ${sensor_msgs_TARGETS}
+    sensor_msgs::sensor_msgs_library
+    ydlidar_sdk::ydlidar_sdk
+  )
+else()
+  message(STATUS "ydlidar_sdk not found — skipping ydlidar_g4_node")
+endif()
 
 # ── install targets ──────────────────────────────────────────────────────────
 install(
@@ -91,11 +93,16 @@ install(
     hardware_interface
     extended_joy
     kinect_aux
-    ydlidar_g4_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
+
+if(ydlidar_sdk_FOUND)
+  install(TARGETS ydlidar_g4_node
+    RUNTIME DESTINATION lib/${PROJECT_NAME}
+  )
+endif()
 
 install(
   DIRECTORY include/
