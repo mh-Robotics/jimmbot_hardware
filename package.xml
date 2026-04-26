@@ -25,7 +25,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
  -->
 <package format="3">
-  <name>jimmbot_bringup</name>
+  <name>jimmbot_hardware</name>
   <version>0.1.0</version>
   <description>mhRobotics jimmBOT bringup package</description>
 
@@ -34,21 +34,29 @@ SOFTWARE.
   <maintainer email="m.halimi@gmail.com">Mergim Halimi</maintainer>
 
   <url type="website">www.mergimhalimi.com</url>
-  <url type="repository">https://github.com/mh-Robotics/jimmbot_bringup</url>
+  <url type="repository">https://github.com/mh-Robotics/jimmbot_hardware</url>
 
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>jimmbot_msgs</depend>
+  <depend>rclcpp</depend>
+
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 
-  <exec_depend>jimmbot_base</exec_depend>
+  <exec_depend>jimmbot_audiofx</exec_depend>
   <exec_depend>jimmbot_description</exec_depend>
   <exec_depend>diff_drive_controller</exec_depend>
   <exec_depend>joint_state_controller</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>controller_manager</exec_depend>
+  <exec_depend>openni_launch</exec_depend>
+  <exec_depend>razor_imu_9dof</exec_depend>
+  <exec_depend>rosserial_python</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>ydlidar_ros</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

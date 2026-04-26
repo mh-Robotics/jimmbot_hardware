@@ -2,7 +2,7 @@
 <!-- 
 MIT License
 
-@file      jimmbot_hw_bridge.launch
+@file      hadrware_interface_test.launch
 @author    Mergim Halimi (m.halimi123@gmail.com)
 @copyright Copyright (c) 2021, mhRobotics, Inc., All rights reserved.
 
@@ -25,8 +25,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
  -->
 <launch>
-  <node name="serial_node" pkg="rosserial_python" type="serial_node.py" respawn="true">
-    <param name="port" value="/dev/esp32_ros_node"/>
-    <param name="baud" value="115200" />
-  </node>
+    <env name="ROSCONSOLE_FORMAT" value="[${severity}] [${time}] ${logger}: ${message}" />
+    <test test-name="hardware_interface" pkg="jimmbot_base" type="hardware_interface_test" time-limit="10.0" />
 </launch>
