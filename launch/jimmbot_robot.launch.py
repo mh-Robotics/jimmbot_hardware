@@ -16,7 +16,7 @@ def generate_launch_description():
         [FindPackageShare('jimmbot_hardware'), 'launch', 'base.launch.py']
     )
     audiofx_launch = PathJoinSubstitution(
-        [FindPackageShare('jimmbot_audiofx'), 'launch', 'audiofx.launch.py']
+        [FindPackageShare('jimmbot_hardware'), 'launch', 'audiofx.launch.py']
     )
 
     return LaunchDescription([

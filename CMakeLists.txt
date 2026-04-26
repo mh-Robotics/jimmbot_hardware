@@ -110,7 +110,7 @@ install(
 )
 
 install(
-  DIRECTORY config install launch udev
+  DIRECTORY config install launch media udev
   DESTINATION share/${PROJECT_NAME}
 )
 

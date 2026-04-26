@@ -46,7 +46,8 @@ SOFTWARE.
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 
-  <exec_depend>jimmbot_audiofx</exec_depend>
+  <exec_depend>audio_play</exec_depend>
+  <exec_depend>sound_play</exec_depend>
   <exec_depend>jimmbot_description</exec_depend>
   <exec_depend>diff_drive_controller</exec_depend>
   <exec_depend>joint_state_controller</exec_depend>

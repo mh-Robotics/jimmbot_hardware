@@ -1,0 +1,9 @@
+audio_play_fx:
+  device: "hw:1,1"
+  ns: "audiofx"
+  dst: "alsasink"
+  do_timestamp: "false"
+  format: "mp3"
+  channels: "2"
+  sample_rate: "48000"
+  sample_format: "S16LE"
